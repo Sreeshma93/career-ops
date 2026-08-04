@@ -417,3 +417,13 @@ One TSV file per evaluation at `batch/tracker-additions/{num}-{company-slug}.tsv
 - No markdown bold (`**`) in status field
 - No dates in status field (use the date column)
 - No extra text (use the notes column)
+
+<!-- FORK-LOCAL ADDITION — not part of upstream career-ops.
+     If this section causes a rebase conflict, keep it. -->
+
+## Fork Maintenance (this install)
+
+This checkout is a fork of `santifer/career-ops`. Sync upstream with
+`./sync-upstream.sh`, **not** `npm run update` — the built-in updater overwrites
+customized system files. Full workflow in [`FORK.md`](FORK.md); agent-facing rules
+in `modes/_custom.md`.
