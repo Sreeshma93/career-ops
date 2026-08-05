@@ -397,6 +397,14 @@ const USER_PATHS = [
   'opencode.json',
   '.claude/settings.json',
   '.claude/hooks/',
+  // Fork-local files this install added; upstream does not ship them. They are
+  // registered as user-owned so the updater leaves them alone and so
+  // validate-system-paths-coverage.mjs sees them as covered. Listing them under
+  // SYSTEM_PATHS instead would tell the updater to fetch them from an upstream
+  // that has no such files.
+  'FORK.md',
+  'sync-upstream.sh',
+  '.mcp.json',
 ];
 
 function parseVersionFile(raw) {

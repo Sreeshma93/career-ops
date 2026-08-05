@@ -32,6 +32,7 @@ import { readFile } from 'fs/promises';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { randomUUID } from 'node:crypto';
+import yaml from 'js-yaml'; // LOCAL PATCH (fork): for readCvPageBudget below
 import { readStyleTokens, injectThemeStyle } from './theme-style.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -272,6 +273,32 @@ export function validateCvSectionOrder(html, cvMarkdown, { allowReorder = false 
 }
 
 /**
+ * LOCAL PATCH (fork): read the CV page budget from config/profile.yml `cv:`.
+ *
+ * Upstream exposes the budget only as CLI flags, which makes a one-page rule
+ * depend on the agent remembering to pass them on every single render. Reading
+ * the default from the profile makes it a property of the install instead.
+ *
+ * Falls back to the upstream defaults on a missing file, unreadable YAML, or
+ * absent keys, so this never turns a config problem into a failed render.
+ *
+ * @returns {{ maxPages: number, strictPages: boolean }}
+ */
+export function readCvPageBudget(profilePath = 'config/profile.yml') {
+  try {
+    if (!existsSync(profilePath)) return { maxPages: 2, strictPages: false };
+    const cv = (yaml.load(readFileSync(profilePath, 'utf-8')) || {}).cv || {};
+    const parsed = Number(cv.max_pages);
+    return {
+      maxPages: Number.isInteger(parsed) && parsed >= 1 ? parsed : 2,
+      strictPages: cv.strict_pages === true,
+    };
+  } catch {
+    return { maxPages: 2, strictPages: false };
+  }
+}
+
+/**
  * Decide whether a rendered CV fits its configured page budget.
  *
  * This is deliberately separate from rendering: page count comes from the
@@ -282,6 +309,7 @@ export function validateCvSectionOrder(html, cvMarkdown, { allowReorder = false 
  * @param {{ maxPages?: number, strictPages?: boolean }} [options]
  * @returns {void}
  */
+
 export function enforcePageBudget(pageCount, { maxPages = 2, strictPages = false } = {}) {
   if (!Number.isInteger(pageCount) || pageCount < 1) {
     throw new Error(`Could not determine the rendered PDF page count (received ${pageCount}).`);
@@ -427,7 +455,16 @@ async function generatePDF() {
 
   // Parse arguments
   let inputPath, outputPath, format = 'a4', reportNum = '', allowReorder = false;
-  let maxPages = 2, maxPagesInput = '2', strictPages = false;
+
+  // LOCAL PATCH (fork): seed the page budget from config/profile.yml `cv:`
+  // (max_pages / strict_pages) so the limit is enforced by the tool rather than
+  // remembered by the agent at call time. Explicit CLI flags still win, since
+  // the loop below overwrites these. Absent keys reproduce the upstream defaults
+  // (2 pages, warning-only), so an unconfigured profile is unchanged.
+  const cvBudget = readCvPageBudget();
+  let maxPages = cvBudget.maxPages;
+  let maxPagesInput = String(cvBudget.maxPages);
+  let strictPages = cvBudget.strictPages;
 
   for (const arg of args) {
     if (arg.startsWith('--format=')) {
