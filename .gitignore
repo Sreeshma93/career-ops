@@ -123,3 +123,18 @@ plan/
 # (see DATA_CONTRACT.md). Re-include them past the unanchored user-layer
 # patterns above (cv.md, portals.yml).
 !test-fixtures/**
+
+# Alert-path targeting policy (fork). Personal: never_claim_stack is a list of
+# skills the user does NOT have, and home_metro/relocation_metros say where they
+# live and would move. This fork is public, so only the neutral example ships.
+config/watch-policy.yml
+# Geographic employer research — reveals the user's metro.
+config/socal-employers.yml
+# Session handoff notes (phone number, work-authorization status, live applications)
+HANDOFF-*.md
+# Playwright accessibility snapshots left behind by portal debugging
+/ascensus.yml
+/centene.yml
+/nordic.yml
+/taylormade.yml
+/vsp.yml

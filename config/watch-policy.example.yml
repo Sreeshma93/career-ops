@@ -1,0 +1,79 @@
+# watch-policy.example.yml — targeting policy for the alert gates.
+#
+# Copy to config/watch-policy.yml and edit. That file is gitignored: it holds
+# YOUR targeting (which titles you want, which stacks you cannot claim, where
+# you will and will not work), which is personal information and does not
+# belong in a public fork.
+#
+# Read by archetype-gate.mjs and location-gate.mjs. When config/watch-policy.yml
+# is absent both fall back to THIS file, so a fresh clone runs with generic
+# defaults instead of crashing.
+#
+# Keep this file and modes/_profile.md in sync. _profile.md is the human
+# statement of the policy and is what evaluations read; this is the machine
+# form the alert path enforces.
+
+# ── Which job titles count ──────────────────────────────────────────────────
+archetypes:
+  # Squarely your target roles. These alert.
+  primary:
+    - "software engineer"
+    - "backend engineer"
+    - "full stack engineer"
+
+  # Adjacent: real overlap, not a bullseye. These alert, flagged "adjacent".
+  # The tier exists so a slightly-off title is surfaced rather than dropped.
+  secondary:
+    - "platform engineer"
+    - "infrastructure engineer"
+
+  # Wrong discipline. Checked AFTER primary, so a primary archetype containing
+  # one of these words still wins.
+  reject_discipline:
+    - "sales engineer"
+    - "account executive"
+    - "customer success"
+    - "recruiter"
+
+  # Wrong seniority, in both directions. Checked BEFORE primary: a Director of
+  # your exact archetype is still a Director.
+  reject_level:
+    - "intern"
+    - "internship"
+    - "new grad"
+    - "entry level"
+    - "junior"
+    - "director"
+    - "vp "
+    - "vice president"
+    - "head of"
+    - "chief"
+
+  # Technologies you cannot honestly claim. A title built AROUND one of these
+  # is rejected even when a generic keyword matched. Only applied to
+  # non-primary titles, so "Power BI Developer" at a company called Snowflake
+  # still passes while "Snowflake Data Engineer" does not.
+  never_claim_stack: []
+
+# ── Where you will work ─────────────────────────────────────────────────────
+#
+# Generic geography (US states, foreign countries, remote wording) lives in
+# location-gate.mjs and needs no configuration. Only the personal parts are here.
+location:
+  # Your home metro. On-site, hybrid and remote are ALL acceptable here.
+  # List the actual city names boards write, not just the county.
+  home_metro:
+    - "san francisco"
+    - "oakland"
+
+  # Metros you would relocate to. On-site acceptable in these.
+  # Include satellites: boards write "Somerville", not "Boston".
+  relocation_metros:
+    new york:
+      - "new york"
+      - "brooklyn"
+      - "jersey city"
+    seattle:
+      - "seattle"
+      - "bellevue"
+      - "redmond"

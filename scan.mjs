@@ -2132,11 +2132,23 @@ async function main() {
   const blacklist = loadBlacklist();
 
   // 4. Load dedup sets
+  //
+  // LOCAL PATCH (fork): --ignore-history starts from EMPTY dedup sets, so the
+  // scan reports every currently-live match instead of only first sightings.
+  // That is the whole point of the on-demand search path (`watch.mjs
+  // --search`): "show me everything that fits right now", where re-seeing a
+  // role already alerted on is expected rather than noise. Callers must pair
+  // it with --dry-run so a full re-listing never floods pipeline.md or
+  // rewrites scan-history.tsv and destroys the first-sighting signal the
+  // scheduled alert path depends on.
+  const ignoreHistory = args.includes('--ignore-history');
   const historyPolicy = scanHistoryPolicy(config);
-  const seenUrlState = loadSeenUrls(historyPolicy);
+  const seenUrlState = ignoreHistory ? { seen: new Set(), recheckEligible: 0 } : loadSeenUrls(historyPolicy);
   const seenUrls = seenUrlState.seen;
   const canonicalizeCompany = buildCompanyCanonicalizer(config.company_aliases);
-  const seenCompanyRoles = loadSeenCompanyRoles(APPLICATIONS_PATH, canonicalizeCompany, { policy: historyPolicy });
+  const seenCompanyRoles = ignoreHistory
+    ? new Set()
+    : loadSeenCompanyRoles(APPLICATIONS_PATH, canonicalizeCompany, { policy: historyPolicy });
 
   // 5. Fetch from each target
   const date = new Date().toISOString().slice(0, 10);
@@ -2571,6 +2583,15 @@ async function main() {
         : '';
       const blacklistSuffix = o.blacklisted ? ' [BLACKLISTED — on your do-not-apply list]' : '';
       console.log(`  + ${o.company} | ${o.title} | ${o.location || 'N/A'}${trustSuffix}${blacklistSuffix}`);
+      // LOCAL PATCH (fork): emit the URL under each match.
+      //
+      // Without it this block is unparseable by a caller: company/title/location
+      // with no link, which is why watch.mjs originally had to diff
+      // data/pipeline.md to recover URLs. That works for the scheduled path but
+      // not for `watch.mjs --search`, which runs --dry-run and therefore never
+      // writes pipeline.md at all. Indented two extra spaces so the existing
+      // "  + " match-line format stays intact for anything else parsing it.
+      if (o.url) console.log(`      ${o.url}`);
     }
     if (dryRun) {
       console.log('\n(dry run — run without --dry-run to save results)');

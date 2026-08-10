@@ -70,6 +70,31 @@ export default {
     const json = /** @type {any} */ (await ctx.fetchJson(apiUrl, { redirect: 'error' }));
     return parseBambooHRResponse(json, entry.name, origin);
   },
+
+  // `/careers/list` carries no date, so every posting would arrive `undated`
+  // and scan-ats-full drops those by default (a reverse scan targets fresh
+  // roles). The date lives one request away in `/careers/<id>/detail` under
+  // result.jobOpening.datePosted.
+  //
+  // Same contract as the icims hook: the sweep calls this only AFTER the cheap
+  // title and location filters pass, so an 11k-tenant directory scan pays a
+  // detail request for real candidates only, never for noise. Throwing leaves
+  // the posting undated rather than dropping it.
+  async enrichDate(job, ctx) {
+    const detailUrl = `${job.url.replace(/\/+$/, '')}/detail`;
+    assertBambooHRUrl(detailUrl);
+    const json = /** @type {any} */ (await ctx.fetchJson(detailUrl, { redirect: 'error' }));
+    const posted = json?.result?.jobOpening?.datePosted;
+    if (typeof posted === 'string' && posted.trim()) {
+      // MUST be epoch ms, not an ISO string. classifyPostingDate does
+      // `job.postedAt < cutoff` against a numeric cutoff; a string coerces to
+      // NaN there, every comparison is false, and stale postings sail through
+      // the --since window undetected. Same contract as greenhouse/lever/ashby.
+      const ts = new Date(posted.trim()).getTime();
+      if (!Number.isNaN(ts)) job.postedAt = ts;
+    }
+    return job;
+  },
 };
 
 /**

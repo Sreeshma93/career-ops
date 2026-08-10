@@ -43,6 +43,7 @@ import lever from './providers/lever.mjs';
 import ashby from './providers/ashby.mjs';
 import workday from './providers/workday.mjs';
 import icims from './providers/icims.mjs';
+import bamboohr from './providers/bamboohr.mjs';
 import { buildTitleFilter, buildLocationFilter, buildContentFilter, matchedTitleKeywords, loadSeenUrls, normalizeUrlForDedup, appendToPipeline, appendToScanHistory, loadBlacklist, parseSinceDays } from './scan.mjs';
 import { SEED_SOURCES, toPortalEntry } from './seeds/vc-portfolios.mjs';
 import { normalizeCompany } from './tracker-utils.mjs';
@@ -196,6 +197,16 @@ export const SOURCES = {
       ? entryOnHost(String(slug), `https://careers-${slug}.icims.com/jobs/search?ss=1&in_iframe=1`, h => h === `careers-${String(slug).toLowerCase()}.icims.com`)
       : null,
   },
+  // 11,316 tenants, mostly US small/mid-size employers — a segment the other
+  // five sources barely cover. The list API carries no date, so this source
+  // leans on the provider's enrichDate hook (see providers/bamboohr.mjs).
+  bamboohr: {
+    provider: bamboohr,
+    dataset: `${DATASET_BASE}/bamboohr_companies.json`,
+    toEntry: (slug) => SLUG_RE.test(String(slug))
+      ? entryOnHost(String(slug), `https://${String(slug).toLowerCase()}.bamboohr.com/careers/list`, h => h === `${String(slug).toLowerCase()}.bamboohr.com`)
+      : null,
+  },
 };
 
 // ── CLI args ────────────────────────────────────────────────────────
@@ -204,6 +215,8 @@ const KNOWN_FLAGS = [
   '--since', '--limit', '--ats', '--seeds', '--dry-run', '--liveness',
   '--verbose', '--md-out', '--json', '--include-undated', '--include-blacklisted',
   '--shuffle', '--resume', '--help', '-h',
+  // LOCAL PATCH (fork): see the loadSeenUrls call site.
+  '--ignore-history',
 ];
 
 // Flags that consume the next argv token as a value (space-separated form —
@@ -299,6 +312,8 @@ function parseArgs(argv) {
     ats,
     seeds,
     dryRun: args.includes('--dry-run'),
+    // LOCAL PATCH (fork): see the loadSeenUrls call site.
+    ignoreHistory: args.includes('--ignore-history'),
     liveness: args.includes('--liveness'),
     verbose: args.includes('--verbose'),
     mdOut: valueOf('--md-out'),
@@ -634,7 +649,17 @@ async function main() {
   const sourcesSummary = [atsSummary, seedsSummary].filter(Boolean).join(' | ');
   log(`Reverse ATS scan — ${sourcesSummary} | since ${opts.sinceDays}d${opts.limit < Infinity ? ` | limit ${opts.limit}/ats` : ''}${opts.shuffle ? ' | shuffled' : ''}${opts.includeUndated ? ' | +undated' : ''}${opts.liveness ? ' | liveness' : ''}${opts.dryRun ? ' | DRY RUN' : ''}`);
 
-  const { seen: seenUrls } = loadSeenUrls();
+  // LOCAL PATCH (fork): --ignore-history starts from an EMPTY dedup set, so
+  // the sweep reports every currently-live match rather than only URLs it has
+  // never seen. This is what `watch.mjs --search` runs on: an on-demand "show
+  // me everything that fits right now", where re-reporting an already-alerted
+  // role is the intended behaviour.
+  //
+  // Note this ALSO disables intra-scan dedup seeding, so it must be paired
+  // with --dry-run: without it, a full re-listing would append thousands of
+  // rows to pipeline.md and rewrite scan-history.tsv, destroying the
+  // first-sighting signal the scheduled alert path is built on.
+  const { seen: seenUrls } = opts.ignoreHistory ? { seen: new Set() } : loadSeenUrls();
   const blacklist = loadBlacklist();
   // sinceMs and includeUndated let providers (currently only workday.mjs)
   // stop paginating a tenant early instead of always walking to max_pages:
@@ -1034,7 +1059,18 @@ async function main() {
         title: o.title,
         url: o.url,
         location: o.location || null,
-        postedAt: o.postedAt ? new Date(o.postedAt).toISOString().slice(0, 10) : null,
+        // LOCAL PATCH (fork): full ISO timestamp, not .slice(0, 10).
+        // watch.mjs reports posting age in HOURS, and a date-only string
+        // collapses every posting to midnight UTC — a role published 20
+        // minutes ago and one published yesterday evening become
+        // indistinguishable. Greenhouse, Lever, Ashby and Oracle Cloud all
+        // carry a real time component; truncating threw it away at the last
+        // step. Consumers wanting a date still get one from .slice(0, 10).
+        postedAt: o.postedAt ? new Date(o.postedAt).toISOString() : null,
+        // `dated` here means "the provider gave a timestamp", NOT "the
+        // timestamp has hour precision". Workday and iCIMS report day buckets
+        // that land on midnight; watch.mjs treats a midnight-exact stamp as
+        // day-granularity and falls back to the 48h window for it.
         dateStatus: o.dateStatus || (o.postedAt ? 'dated' : 'unknown'),
         blacklisted: Boolean(o.blacklisted),
         note: o.note || null,
