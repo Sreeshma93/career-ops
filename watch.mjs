@@ -217,10 +217,16 @@ function freshness(m) {
   };
 }
 
-const ageLabel = (m) =>
-  m.freshness?.ageHours == null
-    ? 'age unknown, new since last sweep'
-    : `${m.freshness.ageHours}h old${m.freshness.precision === 'day' ? ' (day precision)' : ''}`;
+const ageLabel = (m) => {
+  if (m.freshness?.ageHours != null) {
+    return `${m.freshness.ageHours}h old${m.freshness.precision === 'day' ? ' (day precision)' : ''}`;
+  }
+  // "new since last sweep" is only true when first-sighting dedup is ON. Under
+  // --search dedup is off, so the same phrase claimed every undated posting was
+  // brand new when most had been listed for weeks. Say what is actually known:
+  // the provider published no date.
+  return SEARCH ? 'no posting date published' : 'age unknown, new since last sweep';
+};
 
 // ── Company-list growth ─────────────────────────────────────────────────────
 //
@@ -398,8 +404,13 @@ async function runTier(tier, seed) {
     if (payload.stoppedByOutage) degraded.push(`${tier}: stopped by outage, --resume pending`);
     // datasetStatus is a per-source map ({greenhouse: 'fresh', lever: 'stale'}),
     // not a scalar. Reporting the object printed "dataset [object Object]".
+    // loadCompanyList reports exactly three values: 'ok' (healthy), 'stale'
+    // (served from cache after a failed refetch) and 'empty' (no list at all).
+    // The first version treated anything but 'fresh' as degraded, and 'fresh'
+    // is not one of them, so every clean run printed a warning for all three
+    // sources.
     for (const [src, status] of Object.entries(payload.datasetStatus || {})) {
-      if (status && status !== 'fresh') degraded.push(`${tier}/${src}: dataset ${status}`);
+      if (status && String(status) !== 'ok') degraded.push(`${tier}/${src}: dataset ${status}`);
     }
     for (const o of payload.offers || []) {
       raw.push({
